@@ -9,7 +9,7 @@ router.post('/', requireAuth, async (req, res) => {
     if (!title || !capital_required || !capital_type) return res.status(400).json({ error: 'title, capital_required, and capital_type are required' });
     let company_id = req.body.company_id;
     if (!company_id && company_name) {
-      const { data: org, error: orgErr } = await supabase.from('organizations').insert({ name: company_name, website: company_website, country, sector, type: 'borrower' }).select().single();
+      const { data: org, error: orgErr } = await supabase.from('organizations').insert({ name: company_name, website: company_website, country, sector, type: 'company' }).select().single();
       if (orgErr) console.warn('Org create warning:', orgErr.message);
       else {
         const { data: company, error: cErr } = await supabase.from('companies').insert({ org_id: org.id, country, sector, website: company_website }).select().single();
