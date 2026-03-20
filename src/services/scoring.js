@@ -197,11 +197,10 @@ function scoreESG(d) {
  * Compute overall readiness tier from composite score
  */
 function assignReadinessTier(score) {
-  if (score >= 80) return 'Investment Ready';
-  if (score >= 65) return 'Near Ready';
-  if (score >= 50) return 'Developing';
-  if (score >= 35) return 'Early Stage';
-  return 'Not Ready';
+  if (score >= 75) return 'investor_ready';
+  if (score >= 55) return 'fundable';
+  if (score >= 35) return 'emerging';
+  return 'early_stage';
 }
 
 /**
@@ -246,19 +245,18 @@ async function runReadinessAssessment(opportunityId, assessmentData) {
     .from('readiness_assessments')
     .upsert({
       opportunity_id: opportunityId,
-      financial_strength_score: scores.financial_strength,
-      market_validation_score: scores.market_validation,
-      management_quality_score: scores.management_quality,
-      capital_structure_score: scores.capital_structure,
-      regulatory_compliance_score: scores.regulatory_compliance,
-      exit_potential_score: scores.exit_potential,
-      esg_score: scores.esg_score,
-      overall_score: composite,
-      readiness_tier: tier,
-      flags: allFlags,
-      missing_items: allMissing,
+      revenue_quality_score: scores.financial_strength,
+      financial_readiness_score: scores.financial_strength,
+      market_position_score: scores.market_validation,
+      management_score: scores.management_quality,
+      capital_clarity_score: scores.capital_structure,
+      governance_score: scores.regulatory_compliance,
+      offtaker_quality_score: scores.exit_potential,
+      total_score: composite,
+      tier,
       assessment_data: assessmentData,
-      assessed_at: new Date().toISOString()
+      deficiencies: allFlags,
+      completed_at: new Date().toISOString()
     }, { onConflict: 'opportunity_id' })
     .select()
     .single();
