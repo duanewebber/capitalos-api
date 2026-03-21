@@ -13,8 +13,7 @@ async function runMatching(passportId) {
     .select(`
       *,
       opportunity:opportunities (
-        capital_required, capital_type,
-        risk_profile, funding_window_closes_at, urgency_tier
+        capital_required, capital_type
       ),
       readiness_assessment:readiness_assessments (
         overall_score, readiness_tier
@@ -28,11 +27,13 @@ async function runMatching(passportId) {
 
   const passportForScoring = {
     ...passport,
-    capital_required: passport.opportunity?.capital_required,
+    capital_required: passport.capital_required || passport.opportunity?.capital_required,
     sector: passport.sector,
     country: passport.country,
     readiness_score: passport.readiness_assessment?.overall_score,
-    risk_profile: passport.risk_profile || passport.opportunity?.risk_profile
+    risk_profile: passport.risk_profile,
+    urgency_tier: passport.urgency_tier,
+    funding_window_closes_at: passport.funding_deadline
   };
 
   const { data: mandates, error: mErr } = await supabase
