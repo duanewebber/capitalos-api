@@ -2,7 +2,6 @@
  * CapitalOS Matching Service
  * Runs the DEFLOW Matching Engine against all active investor mandates.
  */
-
 const supabase = require('../lib/supabase');
 const { computeDEFLOWScore, assignMatchTier } = require('./scoring');
 
@@ -14,7 +13,7 @@ async function runMatching(passportId) {
     .select(`
       *,
       opportunity:opportunities (
-        capital_required, capital_type, country,
+        capital_required, capital_type,
         risk_profile, funding_window_closes_at, urgency_tier
       ),
       readiness_assessment:readiness_assessments (
@@ -25,7 +24,7 @@ async function runMatching(passportId) {
     .single();
 
   if (pErr) throw pErr;
-  if (!passport) throw new Error(`Passport ${passportId} not found`);
+  if (!passport) throw new Error(`Passport not found: ${passportId}`);
 
   const passportForScoring = {
     ...passport,
@@ -42,13 +41,16 @@ async function runMatching(passportId) {
     .eq('is_active', true);
 
   if (mErr) throw mErr;
-  if (!mandates?.length) return { matches_created: 0, matches: [] };
+  if (!mandates.length) {
+    return { matches_created: 0, matches: [] };
+  }
 
   const matchResults = [];
-
   for (const mandate of mandates) {
     const { total: score, breakdown } = computeDEFLOWScore(passportForScoring, mandate);
+
     if (score < MINIMUM_MATCH_SCORE) continue;
+
     const tier = assignMatchTier(score);
 
     const { data: match, error: mInsertErr } = await supabase
@@ -62,20 +64,39 @@ async function runMatching(passportId) {
         match_tier: tier,
         status: 'pending',
         matched_at: new Date().toISOString()
-      }, { onConflict: 'passport_id,investor_mandate_id' })
-      .select().single();
+      })
+      .onConflict('passport_id,investor_mandate_id')
+      .select()
+      .single();
 
-    if (mInsertErr) { console.error('Match insert error:', mInsertErr); continue; }
-    matchResults.push({ match_id: match.id, investor_id: mandate.organization_id, score, tier });
+    if (mInsertErr) {
+      console.error('Match insert error:', mInsertErr);
+      continue;
+    }
+
+    matchResults.push({
+      match_id: match.id,
+      investor_id: mandate.organization_id
+    });
   }
 
-  await supabase.from('capital_intelligence_events').insert({
-    event_type: 'matching_complete', passport_id: passportId,
-    metadata: { total_mandates_evaluated: mandates.length, matches_created: matchResults.length, top_score: matchResults.length > 0 ? Math.max(...matchResults.map(m => m.score)) : 0 },
-    recorded_at: new Date().toISOString()
-  });
+  await supabase
+    .from('capital_intelligence_events')
+    .insert({
+      event_type: 'matching_complete',
+      passport_id: passportId,
+      metadata: {
+        total_mandates_evaluated: mandates.length,
+        matches_created: matchResults.length,
+        top_score: matchResults.length ? Math.max(...matchResults.map(m => m.score || 0)) : 0
+      },
+      recorded_at: new Date().toISOString()
+    });
 
-  return { matches_created: matchResults.length, matches: matchResults };
+  return {
+    matches_created: matchResults.length,
+    matches: matchResults
+  };
 }
 
 async function dispatchMatches(passportId) {
@@ -93,72 +114,134 @@ async function dispatchMatches(passportId) {
     .order('fit_score', { ascending: false });
 
   if (error) throw error;
-  if (!matches?.length) return { dispatched_count: 0, emails_sent: 0 };
+  if (!matches.length) {
+    return { dispatched_count: 0, emails_sent: 0 };
+  }
 
   const matchIds = matches.map(m => m.id);
-  await supabase.from('matches').update({ status: 'dispatched', dispatched_at: new Date().toISOString() }).in('id', matchIds);
 
-  await supabase.from('capital_intelligence_events').insert({
-    event_type: 'matches_dispatched', passport_id: passportId,
-    metadata: { dispatched_count: matches.length, top_match_score: matches[0]?.fit_score },
-    recorded_at: new Date().toISOString()
-  });
+  await supabase
+    .from('matches')
+    .update({
+      status: 'dispatched',
+      dispatched_at: new Date().toISOString()
+    })
+    .in('id', matchIds);
+
+  await supabase
+    .from('capital_intelligence_events')
+    .insert({
+      event_type: 'matches_dispatched',
+      passport_id: passportId,
+      metadata: {
+        dispatched_count: matches.length,
+        top_match_score: matches[0]?.fit_score
+      },
+      recorded_at: new Date().toISOString()
+    });
 
   return {
     dispatched_count: matches.length,
     emails_sent: matches.length,
-    dispatch_list: matches.map(m => ({ match_id: m.id, score: m.fit_score, tier: m.match_tier, organization: m.mandate?.organization?.name }))
+    dispatch_list: matches.map(m => ({
+      match_id: m.id,
+      score: m.fit_score,
+      tier: m.match_tier,
+      organization: m.mandate?.organization?.name
+    }))
   };
 }
 
 async function processInvestorResponse(matchId, responseType, notes) {
   const valid = ['interested', 'call_requested', 'pass', 'needs_more_info', 'term_sheet_requested'];
-  if (!valid.includes(responseType)) throw new Error(`Invalid response_type. Must be one of: ${valid.join(', ')}`);
+  if (!valid.includes(responseType)) {
+    throw new Error(`Invalid response_type. Must be one of: ${valid.join(', ')}`);
+  }
 
-  const statusMap = { interested: 'investor_interested', call_requested: 'call_scheduled', pass: 'passed', needs_more_info: 'pending_info', term_sheet_requested: 'term_sheet_stage' };
+  const statusMap = {
+    interested: 'investor_interested',
+    call_requested: 'call_scheduled',
+    pass: 'passed',
+    needs_more_info: 'pending_info',
+    term_sheet_requested: 'term_sheet_stage'
+  };
 
-  const { data: match, error } = await supabase.from('matches').update({
-    status: statusMap[responseType], investor_response: responseType,
-    investor_notes: notes, responded_at: new Date().toISOString()
-  }).eq('id', matchId).select().single();
+  const { data: match, error } = await supabase
+    .from('matches')
+    .update({
+      status: statusMap[responseType],
+      investor_response: responseType,
+      investor_notes: notes,
+      responded_at: new Date().toISOString()
+    })
+    .eq('id', matchId)
+    .select()
+    .single();
 
   if (error) throw error;
 
   if (['interested', 'term_sheet_requested'].includes(responseType)) {
-    await supabase.from('deal_processes').upsert({
-      passport_id: match.passport_id, match_id: matchId,
-      stage: responseType === 'term_sheet_requested' ? 'term_sheet' : 'initial_interest',
-      created_at: new Date().toISOString()
-    }, { onConflict: 'passport_id,match_id' });
+    await supabase
+      .from('deal_processes')
+      .upsert({
+        passport_id: match.passport_id,
+        match_id: matchId,
+        stage: responseType === 'term_sheet_requested' ? 'term_sheet' : 'initial_interest',
+        created_at: new Date().toISOString()
+      })
+      .onConflict('passport_id,match_id');
   }
 
-  await supabase.from('capital_intelligence_events').insert({
-    event_type: 'investor_response', passport_id: match.passport_id,
-    metadata: { match_id: matchId, response_type: responseType },
-    recorded_at: new Date().toISOString()
-  });
+  await supabase
+    .from('capital_intelligence_events')
+    .insert({
+      event_type: 'investor_response',
+      passport_id: match.passport_id,
+      metadata: {
+        match_id: matchId,
+        response_type: responseType
+      },
+      recorded_at: new Date().toISOString()
+    });
 
-  return { match_id: matchId, response_type: responseType, status: statusMap[responseType] };
+  return {
+    match_id: matchId,
+    response_type: responseType,
+    status: statusMap[responseType]
+  };
 }
 
 async function getPipelineStats() {
   const now = new Date();
-  const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const weekAgo = new Date(now - 1000 * 60 * 60 * 24 * 7).toISOString();
 
   const [passportsRes, matchesRes, dispatchedRes, dealProcessRes] = await Promise.all([
-    supabase.from('deal_passports').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-    supabase.from('matches').select('id', { count: 'exact', head: true }),
-    supabase.from('matches').select('id', { count: 'exact', head: true }).gte('dispatched_at', weekAgo),
-    supabase.from('deal_processes').select('stage').neq('stage', 'closed')
+    supabase
+      .from('deal_passports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'active'),
+    supabase
+      .from('matches')
+      .select('id', { count: 'exact', head: true }),
+    supabase
+      .from('matches')
+      .select('id', { count: 'exact', head: true })
+      .gte('dispatched_at', weekAgo),
+    supabase
+      .from('deal_processes')
+      .select('stage')
+      .neq('stage', 'closed')
   ]);
 
   const stageCounts = {};
-  (dealProcessRes.data ?? []).forEach(dp => { stageCounts[dp.stage] = (stageCounts[dp.stage] ?? 0) + 1; });
+  dealProcessRes.data?.forEach(d => {
+    stageCounts[d.stage] = (stageCounts[d.stage] || 0) + 1;
+  });
 
   return {
-    active_passports: passportsRes.count ?? 0,
-    total_matches: matchesRes.count ?? 0,
-    dispatched_this_week: dispatchedRes.count ?? 0,
+    active_passports: passportsRes.count,
+    total_matches: matchesRes.count,
+    dispatched_this_week: dispatchedRes.count,
     deal_pipeline: stageCounts,
     generated_at: now.toISOString()
   };
