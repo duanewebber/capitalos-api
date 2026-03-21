@@ -14,7 +14,7 @@ async function runMatching(passportId) {
     .select(`
       *,
       opportunity:opportunities (
-        capital_required, capital_type, sector, country,
+        capital_required, capital_type, country,
         risk_profile, funding_window_closes_at, urgency_tier
       ),
       readiness_assessment:readiness_assessments (
@@ -30,7 +30,7 @@ async function runMatching(passportId) {
   const passportForScoring = {
     ...passport,
     capital_required: passport.opportunity?.capital_required,
-    sector: passport.sector || passport.opportunity?.sector,
+    sector: passport.sector,
     country: passport.country,
     readiness_score: passport.readiness_assessment?.overall_score,
     risk_profile: passport.risk_profile || passport.opportunity?.risk_profile
@@ -146,7 +146,7 @@ async function getPipelineStats() {
   const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const [passportsRes, matchesRes, dispatchedRes, dealProcessRes] = await Promise.all([
-    supabase.from('deal_passports').select('id', { count: 'exact', head: true }).eq('status', 'published'),
+    supabase.from('deal_passports').select('id', { count: 'exact', head: true }).eq('status', 'active'),
     supabase.from('matches').select('id', { count: 'exact', head: true }),
     supabase.from('matches').select('id', { count: 'exact', head: true }).gte('dispatched_at', weekAgo),
     supabase.from('deal_processes').select('stage').neq('stage', 'closed')
