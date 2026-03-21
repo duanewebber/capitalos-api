@@ -6,12 +6,13 @@ const matchingService = require('../services/matching');
 
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { opportunity_id, title, executive_summary, capital_structure_narrative, sector, country, stage, risk_profile, target_irr_pct, funding_deadline, urgency_tier } = req.body;
+    const { opportunity_id, assessment_id, title, executive_summary, capital_structure_narrative, sector, country, stage, risk_profile, target_irr_pct, funding_deadline, urgency_tier } = req.body;
     if (!opportunity_id) return res.status(400).json({ error: 'opportunity_id is required' });
-    const { data: opp } = await supabase.from('opportunities').select('*, company:companies(sector, country, org:organizations(name)), assessment:readiness_assessments(total_score, tier)').eq('id', opportunity_id).single();
+    const { data: opp } = await supabase.from('opportunities').select('*, company:companies(sector, country, org:organizations(name)), assessment:readiness_assessments(id, total_score, tier)').eq('id', opportunity_id).single();
     if (!opp) return res.status(404).json({ error: 'Opportunity not found' });
     const { data: passport, error } = await supabase.from('deal_passports').insert({
       opportunity_id,
+      assessment_id: assessment_id || opp.assessment?.id,
       sector: sector || opp.company?.sector,
       country: country || opp.company?.country,
       currency_code: opp.currency_code || 'ZAR',
@@ -40,10 +41,10 @@ router.post('/', requireAuth, async (req, res) => {
 router.post('/:id/publish', requireAuth, async (req, res) => {
   try {
     const passportId = req.params.id;
-    const { data: passport, error } = await supabase.from('deal_passports').update({ status: 'published', published_at: new Date().toISOString() }).eq('id', passportId).select().single();
+    const { data: passport, error } = await supabase.from('deal_passports').update({ status: 'active', published_at: new Date().toISOString() }).eq('id', passportId).select().single();
     if (error) throw error;
     if (!passport) return res.status(404).json({ error: 'Passport not found' });
-    await supabase.from('opportunities').update({ status: 'published' }).eq('id', passport.opportunity_id);
+    await supabase.from('opportunities').update({ status: 'active' }).eq('id', passport.opportunity_id);
     await supabase.from('capital_intelligence_events').insert({
       event_type: 'passport_published',
       entity_type: 'deal_passport',
@@ -52,7 +53,7 @@ router.post('/:id/publish', requireAuth, async (req, res) => {
       metadata: { capital_required: passport.capital_required, capital_type: passport.capital_type, urgency_tier: passport.urgency_tier },
       occurred_at: new Date().toISOString()
     });
-    res.json({ success: true, passport_id: passportId, status: 'published' });
+    res.json({ success: true, passport_id: passportId, status: 'active' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
