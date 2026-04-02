@@ -1,0 +1,15 @@
+# Ignore everything by default
+*
+.*
+
+# Allow project files
+!src/
+!src/**
+!docs/
+!docs/**
+!.github/
+!.github/**
+!package.json
+!package-lock.json
+!railway.toml
+!.gitignore
