@@ -3,6 +3,29 @@
 ## Project
 Capital OS
 
+## Immediate Next Session Instruction
+The next session should read:
+1. `CLAUDE.md`
+2. `docs/progress.md`
+3. `docs/session-handoff.md`
+
+Then it should focus only on deployment and do the following:
+1. Check current deploy status
+2. Identify the exact deploy files required
+3. Deploy the required files to Netlify
+4. Confirm the live site is working at `capitalos.co.za`
+
+The next session should not:
+- resume old exploratory work
+- re-audit the whole repo
+- reopen architecture discussions
+- explore unrelated files
+
+If blocked, it should report only:
+- the exact blocker
+- the exact file or setting involved
+- the shortest resolution path
+
 ## Handoff Purpose
 This file exists to let a new Claude Code / Coworker session restart quickly without relying on long previous chats.
 
