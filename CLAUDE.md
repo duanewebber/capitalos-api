@@ -79,6 +79,24 @@ Push to `main` → Railway auto-deploys via `npm start`.
 Health check: `GET /health` — must return `{ status: "healthy" }`.
 Check Railway logs if a deploy fails before attempting a fix.
 
+## Architecture Invariants
+
+- Express app is a single process — no workers, no clustering
+- All business logic lives in `src/services/`, routes are thin wrappers
+- Supabase is the only datastore — no local DB, no Redis
+- Auth is JWT-based, applied per-router (not globally)
+- Scoring weights and tier thresholds are calibrated business rules — never change without explicit instruction
+- The `/health` endpoint must always return `{ status: "healthy" }` without auth
+
+## Coding Conventions
+
+- CommonJS (`require`/`module.exports`) — no ESM
+- No TypeScript
+- Error handling: throw from services, catch in global error handler
+- Env var validation: check at top of any file that uses them
+- No ORM — use Supabase client directly
+- Route files export an Express Router
+
 ## Token Discipline
 
 - Do not make changes until you have 95% confidence in the plan.
@@ -87,9 +105,24 @@ Check Railway logs if a deploy fails before attempting a fix.
 - Do not explore the whole repo unless explicitly asked.
 - In first pass, inspect the minimum number of files needed.
 - Before editing, name the exact files to be changed and why.
-- Limit shell output with `head`, `tail`, `grep`, or targeted commands.
+- Limit shell output with `head -20`, `tail -20`, or targeted grep. Never dump full files to shell.
 - Run targeted tests only.
 - After each completed work unit, update `docs/progress.md` and `docs/session-handoff.md`.
 - Save architectural decisions in `docs/decisions.md`, not in chat.
 - If context exceeds ~60%, compact with explicit preservation instructions.
 - Use a fresh chat for unrelated tasks.
+
+## Workflow Rules
+
+- **No write before approved plan.** Default to Plan Mode for any non-trivial change.
+- **No broad repo exploration.** This repo has ~19 files. Name the exact files before reading them.
+- **Do not re-open settled decisions** listed in `docs/decisions.md` unless explicitly asked.
+- **Checkpoint after each work unit:** update `docs/progress.md` and `docs/session-handoff.md`.
+- **Fresh session triggers:** unrelated task, context exceeds ~60%, or major topic change.
+- **Save decisions in files, not chat.** If a design choice is made, add it to `docs/decisions.md`.
+
+## Model Selection
+
+- Use Opus for architecture decisions, complex debugging, and multi-file refactors
+- Use Sonnet for routine CRUD, single-file edits, and known-pattern work
+- Use Haiku for quick lookups and formatting tasks
